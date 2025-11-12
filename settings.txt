@@ -1,0 +1,54 @@
+# =============================================================================
+# DREAMINA SETTINGS CONFIGURATION
+# =============================================================================
+# Cấu hình cho script automation Dreamina
+# Sử dụng format: KEY: VALUE
+
+# -----------------------------------------------------------------------------
+# ASPECT RATIO SETTINGS
+# -----------------------------------------------------------------------------
+# Chọn tỷ lệ khung hình từ các options sau:
+# 
+# Available Options:
+# - AUTO      : Tự động (value="")  
+# - 21:9      : Ultra-wide (value="21:9")
+# - 16:9      : Widescreen (value="16:9") 
+# - 3:2       : Classic photo (value="3:2")
+# - 4:3       : Standard (value="4:3")
+# - 1:1       : Square (value="1:1") [DEFAULT trong HTML]
+# - 3:4       : Portrait (value="3:4")
+# - 2:3       : Classic portrait (value="2:3") 
+# - 9:16      : Mobile/Stories (value="9:16")
+
+RATIO: 16:9
+
+# -----------------------------------------------------------------------------
+# OTHER SETTINGS (có thể mở rộng sau)
+# -----------------------------------------------------------------------------
+# Số lượng ảnh muốn generate
+IMAGE_COUNT: 4
+
+# Quality setting
+QUALITY: high
+
+# Timeout cho browser (giây)
+BROWSER_TIMEOUT: 30
+
+# Cookie file to use (relative to cookies folder)
+COOKIE_FILE: A (221).json
+
+# =============================================================================
+# ENUM MAPPING REFERENCE
+# =============================================================================
+# Mapping từ user input sang HTML value:
+#
+# AUTO    -> ""
+# 21:9    -> "21:9" 
+# 16:9    -> "16:9"
+# 3:2     -> "3:2"
+# 4:3     -> "4:3" 
+# 1:1     -> "1:1"
+# 3:4     -> "3:4"
+# 2:3     -> "2:3"
+# 9:16    -> "9:16"
+# =============================================================================
