@@ -24,12 +24,14 @@ def clean_cookies(cookies):
     """Clean sameSite field from cookies to avoid browser compatibility issues"""
     if not cookies:
         return []
-        
-    for cookie in cookies:
-        if 'sameSite' in cookie:
-            del cookie['sameSite']
     
-    print(f"   🧹 Cleaned sameSite from {len(cookies)} cookies")
+    # Ensure each cookie has a valid sameSite value
+    valid_same_site = {"Strict", "Lax", "None"}
+    for cookie in cookies:
+        if cookie.get("sameSite") not in valid_same_site:
+            cookie["sameSite"] = "Lax"
+    
+    print(f"   🧹 Cleaned {len(cookies)} cookies")
     return cookies
 
 def get_first_cookie_file(cookies_dir: str = "cookies"):
@@ -52,3 +54,53 @@ def get_first_cookie_file(cookies_dir: str = "cookies"):
     print(f"🍪 Using cookie file: {first_file.name}")
     
     return str(first_file)
+
+def load_accounts(folder: str = "cookies") -> list[dict]:
+    """
+    Load all cookie files from folder as accounts
+    
+    Args:
+        folder: Path to cookies folder
+    
+    Returns:
+        List of account dicts with 'name', 'session_id', 'cookies', 'filepath'
+    """
+    print(f"🔑 Loading accounts from '{folder}'...")
+    accounts = []
+    folder_path = Path(folder)
+    
+    if not folder_path.is_dir():
+        print(f"❌ Folder not found: {folder}")
+        return []
+    
+    # Load all JSON files
+    for file_path in sorted(folder_path.glob("*.json")):
+        try:
+            with file_path.open(encoding="utf-8") as f:
+                lines = f.readlines()
+            
+            if len(lines) < 2:
+                print(f"   ⚠️  {file_path.name}: not enough lines, skipping")
+                continue
+            
+            session_id = lines[0].strip()
+            cookies = json.loads("".join(lines[1:]))
+            
+            accounts.append({
+                "name": file_path.stem,
+                "session_id": session_id,
+                "cookies": cookies,
+                "filepath": file_path,
+            })
+            
+            print(f"   ✅ Loaded {file_path.name}")
+            
+        except (json.JSONDecodeError, IndexError) as exc:
+            print(f"   ⚠️  {file_path.name}: bad format ({exc})")
+    
+    if not accounts:
+        print("❌ No usable accounts found")
+    else:
+        print(f"✅ {len(accounts)} account(s) ready\n")
+    
+    return accounts

@@ -9,11 +9,9 @@ async def check_authentication_status(page):
         'user_avatar': [
             'img.dreamina-component-avatar',  # User avatar image
             'div.dreamina-component-avatar-container',  # Avatar container
-            'div[role="menuitem"]#Personal',  # Personal menu item
         ],
         'user_profile': [
             'div.avatar-container-pWp6gd',  # Avatar wrapper
-            'div.lv-menu-item#Personal',  # Personal profile menu
         ]
     }
     
@@ -33,6 +31,7 @@ async def check_authentication_status(page):
     # Check for login indicators (negative auth)
     login_indicators = [
         'button:has-text("Log in")',
+        'button:has-text("Đăng nhập")',
         'button:has-text("Sign in")',
         'text="Please log in"',
         'text="Login required"'
