@@ -16,7 +16,7 @@ import time
 # Import our modules
 from config import (
     COOKIES_FOLDER, PROMPT_FILE, IMAGE_COUNT, CREDITS_PER_GENERATION,
-    BROWSER_HEADLESS, TARGET_URL
+    BROWSER_HEADLESS, TARGET_URL, BROWSER_ARGS, BROWSER_VIEWPORT
 )
 from cookie_handler import load_accounts, clean_cookies
 from prompt_loader import load_prompts_from_file
@@ -67,7 +67,10 @@ def main():
     
     # Start browser
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=BROWSER_HEADLESS)
+        browser = p.chromium.launch(
+            headless=BROWSER_HEADLESS,
+            args=BROWSER_ARGS
+        )
         
         try:
             remaining_prompts = prompts[:]
@@ -98,7 +101,8 @@ def main():
                 # Create browser context for this account
                 context = browser.new_context(
                     locale='en-US',
-                    timezone_id='America/New_York'
+                    timezone_id='America/New_York',
+                    viewport=BROWSER_VIEWPORT  # Full HD viewport
                 )
                 context.add_cookies(clean_cookies(account["cookies"]))
                 page = context.new_page()
