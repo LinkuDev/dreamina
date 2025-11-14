@@ -16,7 +16,7 @@ import time
 # Import our modules
 from config import (
     COOKIES_FOLDER, PROMPT_FILE, IMAGE_COUNT, CREDITS_PER_GENERATION,
-    BROWSER_HEADLESS, TARGET_URL, BROWSER_ARGS, BROWSER_VIEWPORT
+    BROWSER_HEADLESS, TARGET_URL, BROWSER_ARGS, BROWSER_VIEWPORT, BROWSER_ZOOM_LEVEL
 )
 from cookie_handler import load_accounts, clean_cookies
 from prompt_loader import load_prompts_from_file
@@ -59,7 +59,7 @@ def main():
     
     print(f"\n📝 Total prompts to generate: {len(prompts)}")
     
-    # Get aspect ratio from env
+    # Get aspect ratio from env (will be single ratio per worker, set by launcher)
     aspect_ratio = os.getenv('ASPECT_RATIO', '16:9')
     print(f"📐 Aspect ratio: {aspect_ratio}")
     print(f"🎨 Images per prompt: {IMAGE_COUNT}")
@@ -113,6 +113,17 @@ def main():
                     page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=45000)
                     time.sleep(2)
                     
+                    # Apply zoom after page loads for better image quality
+                    try:
+                        print(f"   🔍 Applying {int(BROWSER_ZOOM_LEVEL * 100)}% zoom for sharper images...")
+                        page.evaluate(f"""
+                            document.body.style.zoom = '{BROWSER_ZOOM_LEVEL}';
+                            document.documentElement.style.zoom = '{BROWSER_ZOOM_LEVEL}';
+                        """)
+                        time.sleep(1)
+                    except Exception as e:
+                        print(f"   ⚠️  Could not apply zoom: {e}")
+                    
                     # Handle any modal
                     try:
                         modal = page.locator('div[class*="lv-modal-wrapper"]')
@@ -129,7 +140,7 @@ def main():
                         print(f"\n   {'─' * 60}")
                         print(f"   🎨 Prompt {i}/{prompts_to_process} (#{global_prompt_counter})")
                         
-                        # Generate via UI
+                        # Generate via UI (aspect_ratio is fixed per worker)
                         success = generate_image_via_ui(page, prompt, aspect_ratio)
                         
                         if success:

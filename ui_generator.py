@@ -300,7 +300,7 @@ def wait_for_generation_complete(page: Page, timeout: int = 120) -> bool:
         print(f"   ❌ Error waiting for generation: {e}")
         return False
 
-def generate_image_via_ui(page: Page, prompt: str, aspect_ratio: str = None, output_dir: str = "outputs") -> bool:
+def generate_image_via_ui(page: Page, prompt: str, aspect_ratio: str = None, output_dir: str = None) -> bool:
     """
     Complete flow to generate image via UI and download results
     
@@ -308,7 +308,7 @@ def generate_image_via_ui(page: Page, prompt: str, aspect_ratio: str = None, out
         page: Playwright page (must be on generation page)
         prompt: Text prompt
         aspect_ratio: Aspect ratio like "16:9" (optional, uses env if not provided)
-        output_dir: Directory to save downloaded images
+        output_dir: Directory to save downloaded images (optional, uses OUTPUT_DIR env if not provided)
     
     Returns:
         True if generation and download succeeded
@@ -318,9 +318,14 @@ def generate_image_via_ui(page: Page, prompt: str, aspect_ratio: str = None, out
         if aspect_ratio is None:
             aspect_ratio = os.getenv('ASPECT_RATIO', '16:9')
         
+        # Get output dir from env if not provided
+        if output_dir is None:
+            output_dir = os.getenv('OUTPUT_DIR', 'outputs')
+        
         print(f"\n🎨 Generating via UI...")
         print(f"   📝 Prompt: {prompt[:80]}...")
         print(f"   📐 Aspect Ratio: {aspect_ratio}")
+        print(f"   📁 Output Dir: {output_dir}")
         
         # Step 1: Select aspect ratio and submit
         if not select_aspect_ratio_and_submit(page, aspect_ratio, prompt):
@@ -339,7 +344,7 @@ def generate_image_via_ui(page: Page, prompt: str, aspect_ratio: str = None, out
         print(f"   ❌ Generation failed: {e}")
         return False
 
-def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_dir: str = "outputs", expected_images: int = 4, timeout: int = 180) -> bool:
+def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_dir: str = None, expected_images: int = 4, timeout: int = 180) -> bool:
     """
     Wait for generation to complete and download all generated images
     
@@ -347,7 +352,7 @@ def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_
         page: Playwright page
         prompt: The prompt text used for generation (to find the correct div)
         aspect_ratio: Aspect ratio like "16:9" to determine target resolution
-        output_dir: Directory to save downloaded images
+        output_dir: Directory to save downloaded images (uses OUTPUT_DIR env if not provided)
         expected_images: Number of images to wait for (default 4)
         timeout: Maximum time to wait in seconds
     
@@ -360,86 +365,202 @@ def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_
     from pathlib import Path
     
     try:
+        # Get output dir from env if not provided
+        if output_dir is None:
+            output_dir = os.getenv('OUTPUT_DIR', 'outputs')
+            
         print(f"\n   ⏳ Waiting for generation to complete...")
         print(f"   🔍 Looking for prompt: {prompt[:60]}...")
+        print(f"   📁 Download target: {output_dir}")
         
         # Create output directory if needed
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
         start_time = time.time()
         item_div = None
+        max_main_retries = 3  # Max number of full retries (F5 + resubmit)
+        main_retry = 0
         
-        # Step 1: Find the LAST (newest) div containing our prompt text
-        # Retry with delays because div takes time to appear after submit
-        print("   🔄 Waiting for new item div to appear (with retries)...")
-        
-        retry_count = 0
-        max_find_retries = 20  # Try for up to 40 seconds to find the div
-        
-        while time.time() - start_time < timeout and retry_count < max_find_retries:
-            try:
-                retry_count += 1
-                print(f"   🔍 Search attempt {retry_count}/{max_find_retries}...")
-                
-                # Search for all divs containing the prompt text
-                prompt_elements = page.locator(f'xpath=//span[contains(@class, "prompt-value-container")]')
-                count = prompt_elements.count()
-                
-                print(f"   📊 Found {count} total prompt elements on page")
-                
-                # Look through all elements and find matches
-                matching_indices = []
-                for i in range(count):
-                    try:
-                        element = prompt_elements.nth(i)
-                        text = element.inner_text()
+        while main_retry < max_main_retries:
+            print(f"\n   🔄 Main attempt {main_retry + 1}/{max_main_retries}")
+            
+            # Step 1: Find the correct div containing our prompt text
+            retry_count = 0
+            max_find_retries = 2  # Try only 2 times (2 * 5s = 10s) to find the div
+            found_valid_item = False
+            
+            while retry_count < max_find_retries and not found_valid_item:
+                try:
+                    retry_count += 1
+                    print(f"   🔍 Search attempt {retry_count}/{max_find_retries}...")
+                    
+                    # Search for all divs containing the prompt text
+                    prompt_elements = page.locator(f'xpath=//span[contains(@class, "prompt-value-container")]')
+                    count = prompt_elements.count()
+                    
+                    print(f"   📊 Found {count} total prompt elements on page")
+                    
+                    # Look through all elements and find matches with our exact prompt
+                    matching_items = []
+                    for i in range(count):
+                        try:
+                            element = prompt_elements.nth(i)
+                            text = element.inner_text().strip()
+                            
+                            # Check if this matches our prompt (exact match or close match)
+                            if prompt.strip() == text or prompt[:50] in text or text[:50] in prompt:
+                                # Get the parent item div
+                                item_candidate = element.locator('xpath=ancestor::div[contains(@class, "item-")]').first
+                                
+                                # Check status of this item (processing, completed, or failed)
+                                processing_text = item_candidate.locator('text="Đang xử lý gợi ý của bạn..."')
+                                has_processing = processing_text.count() > 0
+                                
+                                # Check if it has images (completed)
+                                img_elements = item_candidate.locator('img')
+                                has_images = img_elements.count() > 0
+                                
+                                matching_items.append({
+                                    'index': i,
+                                    'element': item_candidate,
+                                    'text': text,
+                                    'has_processing': has_processing,
+                                    'has_images': has_images
+                                })
+                                
+                                print(f"   📝 Match {len(matching_items)}: index {i}, processing={has_processing}, images={has_images}")
+                        except:
+                            continue
+                    
+                    if matching_items:
+                        # Get the LAST matching element (newest one)
+                        last_item = matching_items[-1]
+                        print(f"   ✅ Found {len(matching_items)} matching item(s), checking the last one")
                         
-                        # Check if this is our prompt (compare first 50 chars or full text)
-                        if prompt[:50] in text or text[:50] in prompt:
-                            matching_indices.append(i)
-                    except:
-                        continue
-                
-                if matching_indices:
-                    # Get the LAST matching element (newest one, from top to bottom)
-                    last_index = matching_indices[-1]
-                    print(f"   ✅ Found {len(matching_indices)} matching prompt(s), using the last one (index {last_index})")
+                        # Accept item if it's either processing OR has completed images
+                        if last_item['has_processing'] or last_item['has_images']:
+                            if last_item['has_processing']:
+                                print(f"   ✅ Found item with 'Đang xử lý gợi ý của bạn...' - generation in progress!")
+                            elif last_item['has_images']:
+                                print(f"   ✅ Found item with completed images - generation done!")
+                            item_div = last_item['element']
+                            found_valid_item = True
+                            break
+                        else:
+                            print(f"   ⚠️  Last item has no processing text or images, waiting...")
+                    else:
+                        print(f"   ⚠️  No matching prompt found yet, waiting...")
                     
-                    last_element = prompt_elements.nth(last_index)
-                    # Get the parent item div
-                    item_div = last_element.locator('xpath=ancestor::div[contains(@class, "item-")]').first
-                    print(f"   ✅ Found item div for our newest prompt")
-                    break
-                else:
-                    print(f"   ⚠️  No matching prompt found yet, waiting...")
-                    time.sleep(2)
+                    # Wait 5 seconds before next check
+                    if not found_valid_item:
+                        time.sleep(5)
+                        
+                except Exception as e:
+                    print(f"   ⚠️  Error searching for prompt: {e}")
+                    time.sleep(5)
+            
+            # If we found a valid item, break out of main retry loop
+            if found_valid_item:
+                break
+            
+            # If we didn't find valid item after all retries, try F5 refresh
+            main_retry += 1
+            if main_retry < max_main_retries:
+                print(f"   ❌ Could not find valid item after {max_find_retries} attempts")
+                print(f"   🔄 Refreshing page (F5) and checking again...")
                 
-            except Exception as e:
-                print(f"   ⚠️  Error searching for prompt: {e}")
-                time.sleep(2)
-        
-        if not item_div:
-            print("   ❌ Could not find item div with our prompt after all retries")
-            return False
-        
-        # Step 2: Wait for processing to complete
-        print("   ⏳ Waiting for 'Đang xử lý gợi ý của bạn...' to disappear...")
-        processing_check_start = time.time()
-        
-        while time.time() - processing_check_start < timeout:
-            try:
-                # Check if processing text still exists in this div
-                processing_text = item_div.locator('text="Đang xử lý gợi ý của bạn..."')
-                
-                if processing_text.count() == 0:
-                    print("   ✅ Processing completed")
-                    break
-                    
+                page.reload(wait_until="domcontentloaded")
                 time.sleep(3)
                 
-            except:
-                # If we can't find the text, assume it's done
-                break
+                # Wait a bit more and check again
+                time.sleep(5)
+                
+                # Quick check after F5 - look for our prompt with processing text OR completed images
+                try:
+                    prompt_elements = page.locator(f'xpath=//span[contains(@class, "prompt-value-container")]')
+                    count = prompt_elements.count()
+                    found_after_refresh = False
+                    
+                    for i in range(count):
+                        try:
+                            element = prompt_elements.nth(i)
+                            text = element.inner_text().strip()
+                            
+                            if prompt.strip() == text or prompt[:50] in text:
+                                item_candidate = element.locator('xpath=ancestor::div[contains(@class, "item-")]').first
+                                processing_text = item_candidate.locator('text="Đang xử lý gợi ý của bạn..."')
+                                img_elements = item_candidate.locator('img')
+                                
+                                # Accept if processing OR has images
+                                if processing_text.count() > 0 or img_elements.count() > 0:
+                                    status = "processing" if processing_text.count() > 0 else "completed"
+                                    print(f"   ✅ Found valid item after F5 refresh! Status: {status}")
+                                    item_div = item_candidate
+                                    found_valid_item = True
+                                    found_after_refresh = True
+                                    break
+                        except:
+                            continue
+                    
+                    if found_after_refresh:
+                        break
+                    else:
+                        print(f"   ⚠️  Still no valid item after F5, will restart generation...")
+                        
+                        # Only restart if we truly can't find any trace of our prompt
+                        print(f"   🔄 Restarting generation: selecting aspect ratio and submitting prompt...")
+                        if not select_aspect_ratio_and_submit(page, aspect_ratio, prompt):
+                            print(f"   ❌ Failed to restart generation!")
+                            continue  # Try main retry again
+                        
+                        print(f"   ✅ Restarted generation, will search for item again...")
+                        time.sleep(5)  # Wait for new submission to process
+                        
+                except Exception as e:
+                    print(f"   ⚠️  Error during F5 check: {e}")
+                    time.sleep(3)
+        
+        if not found_valid_item or not item_div:
+            print(f"   ❌ Could not find valid item after {max_main_retries} main attempts")
+            return False
+        
+        # Step 2: Wait for processing to complete (only if still processing)
+        print(f"   ⏳ Checking if generation is still in progress...")
+        
+        # First check current status
+        try:
+            processing_text = item_div.locator('text="Đang xử lý gợi ý của bạn..."')
+            img_elements = item_div.locator('img')
+            
+            if processing_text.count() > 0:
+                print(f"   ⏳ Generation still in progress, waiting for completion...")
+                processing_check_start = time.time()
+                
+                while time.time() - processing_check_start < timeout:
+                    try:
+                        # Check if processing text still exists in this div
+                        processing_text = item_div.locator('text="Đang xử lý gợi ý của bạn..."')
+                        
+                        if processing_text.count() == 0:
+                            print("   ✅ Processing completed")
+                            break
+                        else:
+                            print(f"   ⏳ Still processing... ({int(time.time() - processing_check_start)}s)")
+                            
+                        time.sleep(3)
+                        
+                    except:
+                        # If we can't find the text, assume it's done
+                        break
+                        
+            elif img_elements.count() > 0:
+                print(f"   ✅ Generation already completed, found {img_elements.count()} images")
+            else:
+                print(f"   ⚠️  Item found but no processing text or images, will wait briefly...")
+                time.sleep(5)
+                
+        except Exception as e:
+            print(f"   ⚠️  Error checking status: {e}")
         
         time.sleep(2)  # Wait a bit more for images to load
         
@@ -547,10 +668,10 @@ def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_
                     continue
                 
                 # Step 4.2: Find the full resolution image in modal
-                print(f"   🔍 Finding full resolution image in modal...")
+                print(f"   🔍 Finding highest resolution image in modal...")
                 
-                # There are 2 images in modal: 720:720 (full-res) and 360:360 (low-res)
-                # Find all img elements and filter by URL containing "720:720"
+                # Look for images with different resolutions in order of preference (highest to lowest)
+                # Common resolutions: 1440, 1280, 1080, 960, 720, 600, 512, 360
                 modal_img_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[4]/div/div/div[2]/div[1]/div[1]/div/div[1]/div/div/div/div[1]/div/img"
                 all_modal_imgs = page.locator(f'xpath={modal_img_xpath}')
                 
@@ -558,31 +679,49 @@ def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_
                 all_modal_imgs.first.wait_for(state="attached", timeout=10000)
                 time.sleep(1)
                 
-                # Find the image with 720:720 in its src
+                # Find the highest resolution image available
                 full_res_src = None
+                highest_resolution = 0
+                found_resolution = None
                 img_count = all_modal_imgs.count()
-                print(f"   📊 Found {img_count} images in modal, looking for 720:720...")
+                print(f"   📊 Found {img_count} images in modal, searching for highest resolution...")
+                
+                # List of possible resolutions to check (from highest to lowest priority)
+                # Including ultra-high resolutions: 4K, 2K, QHD, FHD, HD, and lower
+                possible_resolutions = [
+                    "3840:3840", "2880:2880", "2560:2560", "2048:2048",  # 4K and ultra-high
+                    "1920:1920", "1800:1800", "1440:1440", "1280:1280",  # 2K and QHD range
+                    "1080:1080", "960:960", "720:720", "600:600",        # Standard HD range
+                    "512:512", "480:480"                                 # Lower resolutions
+                ]
                 
                 for j in range(img_count):
                     try:
                         img_element = all_modal_imgs.nth(j)
                         src = img_element.get_attribute('src')
-                        if src and '720:720' in src:
-                            full_res_src = src
-                            print(f"   ✅ Found 720:720 image at index {j}")
-                            break
+                        if src:
+                            # Check each resolution from highest to lowest
+                            for resolution in possible_resolutions:
+                                if resolution in src:
+                                    res_value = int(resolution.split(':')[0])
+                                    if res_value > highest_resolution:
+                                        highest_resolution = res_value
+                                        full_res_src = src
+                                        found_resolution = resolution
+                                        print(f"   ✅ Found {resolution} resolution image at index {j}")
+                                    break
                     except:
                         continue
                 
-                # Fallback: if no 720:720 found, try to find the larger resolution
+                # Fallback: if no specific resolution found, try to find any non-360 image
                 if not full_res_src:
-                    print(f"   ⚠️  No 720:720 found, checking for any high-res image...")
+                    print(f"   ⚠️  No standard resolution found, checking for any high-quality image...")
                     for j in range(img_count):
                         try:
                             img_element = all_modal_imgs.nth(j)
                             src = img_element.get_attribute('src')
                             if src:
-                                # Check if it's NOT the 360:360 version
+                                # Check if it's NOT the low-res 360:360 version
                                 if '360:360' not in src:
                                     full_res_src = src
                                     print(f"   ✅ Found non-360 image at index {j}")
@@ -596,7 +735,13 @@ def wait_and_download_images(page: Page, prompt: str, aspect_ratio: str, output_
                     close_modal(page)
                     continue
                 
-                print(f"   🔗 Full-res URL {i+1}: {full_res_src[:80]}...")
+                # Show what resolution we found
+                if found_resolution:
+                    print(f"   🎯 Using {found_resolution} resolution image")
+                else:
+                    print(f"   🎯 Using best available resolution")
+                
+                print(f"   🔗 Image URL {i+1}: {full_res_src[:80]}...")
                 
                 # Step 4.3: Download the image
                 filename = f"prompt_{hash(prompt) & 0xFFFFFFFF}_{i+1}.webp"
@@ -655,23 +800,28 @@ def convert_to_high_res(url: str, aspect_ratio: str) -> str:
     # Get target dimensions based on aspect ratio
     width, height = get_aspect_ratio_dimensions(aspect_ratio)
     
-    # Default to 720x720 if we can't determine
+    # Try to get the highest resolution available, with fallback chain
     if width is None or height is None:
-        target_res = "720:720"
+        # Try different resolutions from highest to lowest
+        preferred_resolutions = ["3840:3840", "2560:2560", "1920:1920", "1440:1440", "1080:1080", "720:720"]
+        target_res = preferred_resolutions[0]  # Default to highest (4K)
     else:
-        # Use 720 as base and calculate other dimension
-        if width >= height:
-            # Landscape or square
-            base = 720
-            target_width = base
-            target_height = int(base * height / width)
-        else:
-            # Portrait
-            base = 720
-            target_height = base
-            target_width = int(base * width / height)
+        # Calculate dimensions for different base resolutions
+        # Try ultra-high resolutions first: 2560 (2K), 1920 (FHD), 1440 (QHD), 1080, 720
+        base_resolutions = [2560, 1920, 1440, 1080, 720]
         
-        target_res = f"{target_width}:{target_height}"
+        for base in base_resolutions:
+            if width >= height:
+                # Landscape or square
+                target_width = base
+                target_height = int(base * height / width)
+            else:
+                # Portrait
+                target_height = base
+                target_width = int(base * width / height)
+            
+            target_res = f"{target_width}:{target_height}"
+            break  # Use the first (highest) resolution
     
     # Replace the resize parameter
     # Pattern: aigc_resize:360:360 or similar
@@ -714,3 +864,43 @@ def close_modal(page: Page) -> bool:
             return True
         except:
             return False
+
+def detect_available_resolutions(page: Page) -> list:
+    """
+    Detect what resolutions are available on the current page
+    Returns list of available resolutions in format ["1440:1440", "720:720", etc.]
+    """
+    try:
+        # Find all images on page and extract resolution patterns
+        all_imgs = page.locator('img')
+        count = all_imgs.count()
+        
+        resolutions = set()
+        resolution_pattern = r'(\d+):(\d+)'
+        
+        for i in range(min(count, 20)):  # Check first 20 images max
+            try:
+                img = all_imgs.nth(i)
+                src = img.get_attribute('src')
+                if src:
+                    import re
+                    matches = re.findall(resolution_pattern, src)
+                    for match in matches:
+                        width, height = match
+                        if int(width) >= 360 and int(height) >= 360:  # Only valid resolutions
+                            # Also check for ultra-high resolutions
+                            if int(width) <= 4096 and int(height) <= 4096:  # Up to 4K max
+                                resolutions.add(f"{width}:{height}")
+            except:
+                continue
+        
+        # Sort by resolution (highest first)
+        sorted_resolutions = sorted(list(resolutions), 
+                                  key=lambda x: int(x.split(':')[0]), 
+                                  reverse=True)
+        
+        return sorted_resolutions
+    
+    except Exception as e:
+        print(f"   ⚠️  Could not detect resolutions: {e}")
+        return ["720:720", "360:360"]  # Default fallback

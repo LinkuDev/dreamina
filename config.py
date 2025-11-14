@@ -27,18 +27,22 @@ CREDITS_PER_GENERATION = 5
 BROWSER_HEADLESS = os.getenv('BROWSER_HEADLESS', 'false').lower() == 'true'
 BROWSER_TIMEOUT = int(os.getenv('BROWSER_TIMEOUT', '30'))
 
-# Browser launch arguments for full screen experience
+# Browser launch arguments for optimized experience with zoom
 BROWSER_ARGS = [
-    "--start-maximized",          # Start with maximized window
+    "--start-maximized",          # Start with maximized window  
     "--window-size=1920,1080",    # Set large window size
     "--disable-web-security",     # Disable web security for better compatibility
     "--disable-features=VizDisplayCompositor",
     "--no-default-browser-check", # Skip default browser check
     "--disable-extensions",       # Disable extensions for better performance
+    "--force-device-scale-factor=1.0",  # Ensure consistent scaling
 ]
 
 # Default viewport settings for full HD experience
 BROWSER_VIEWPORT = {'width': 1920, 'height': 1080}
+
+# Browser zoom level for sharper images (50% = 0.5, 75% = 0.75, etc.)
+BROWSER_ZOOM_LEVEL = 0.75  # 75% zoom for better image quality
 
 # Advanced Settings
 MAX_RETRIES = int(os.getenv('MAX_RETRIES', '3'))
