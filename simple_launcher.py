@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Simple Multi-Instance Launcher for Dreamina
 Chỉ cần 1 file .env để config tất cả
@@ -11,6 +12,55 @@ import time
 import sys
 import shutil
 from pathlib import Path
+
+# Fix Windows console encoding
+if sys.platform.startswith('win'):
+    try:
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding='utf-8')
+        if hasattr(sys.stderr, 'reconfigure'):  
+            sys.stderr.reconfigure(encoding='utf-8')
+        os.system('chcp 65001 >nul 2>&1')
+    except:
+        pass
+
+# Safe print function
+def safe_print(*args, **kwargs):
+    try:
+        _original_print(*args, **kwargs)  # Use original print, not overridden one
+    except UnicodeEncodeError:
+        safe_args = []
+        for arg in args:
+            if isinstance(arg, str):
+                safe_arg = (arg.replace('🚀', '[START]')
+                              .replace('✅', '[OK]')
+                              .replace('❌', '[ERROR]')
+                              .replace('⚠️', '[WARNING]')
+                              .replace('📝', '[NOTE]')
+                              .replace('🔍', '[SEARCH]')
+                              .replace('💰', '[CREDITS]')
+                              .replace('🎨', '[GENERATE]')
+                              .replace('📐', '[RATIO]')
+                              .replace('🖼️', '[IMAGE]')
+                              .replace('📁', '[FOLDER]')
+                              .replace('⏳', '[WAIT]')
+                              .replace('🌐', '[WEB]')
+                              .replace('🔥', '[FIRE]')
+                              .replace('🎯', '[TARGET]')
+                              .replace('🤔', '[THINK]')
+                              .replace('🎉', '[PARTY]')
+                              .replace('🔧', '[TOOL]')
+                              .replace('🐍', '[PYTHON]'))
+                safe_args.append(safe_arg)
+            else:
+                safe_args.append(arg)
+        _original_print(*safe_args, **kwargs)  # Use original print
+
+# Store original print BEFORE defining safe_print
+import builtins
+_original_print = builtins.print
+# Override print for this script
+print = safe_print
 
 class SimpleLauncher:
     def __init__(self):
