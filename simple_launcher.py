@@ -207,6 +207,16 @@ STARTUP_DELAY=5
         ratio_index = (worker_id - 1) % len(aspect_ratios)
         return aspect_ratios[ratio_index]
     
+    def stream_output(self, pipe, prefix):
+        """Stream output from subprocess pipe with prefix"""
+        try:
+            for line in iter(pipe.readline, ''):
+                if line:
+                    print(f"[{prefix}] {line.rstrip()}")
+            pipe.close()
+        except Exception as e:
+            print(f"[{prefix}] ⚠️ Stream error: {e}")
+    
     def run_instance(self, instance_id, config):
         """Chạy 1 instance với config riêng và aspect ratio rotation"""
         cookies_base = config.get('COOKIES_BASE', 'cookies')
@@ -252,31 +262,53 @@ STARTUP_DELAY=5
             # Set proper encoding for subprocess
             encoding = 'utf-8' if sys.platform.startswith('win') else None
             
-            # Chạy main.py với environment variables
-            result = subprocess.run(
+            # Chạy main.py với Popen để stream real-time logs
+            process = subprocess.Popen(
                 [self.python_cmd, 'main.py'],
                 cwd=self.workspace,
                 env=env,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 encoding=encoding,
-                errors='replace',  # Replace problematic chars instead of crashing
-                timeout=300  # 5 minute timeout
+                errors='replace',
+                bufsize=1  # Line buffered
             )
             
-            if result.returncode == 0:
-                print(f"✅ worker{instance_id} completed successfully")
-                if result.stdout and result.stdout.strip():
-                    print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
-            else:
-                print(f"❌ worker{instance_id} failed with code: {result.returncode}")
-                if result.stderr and result.stderr.strip():
-                    print(f"📝 worker{instance_id} stderr:\n{result.stderr}")
-                if result.stdout and result.stdout.strip():
-                    print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
+            # Create threads để stream stdout và stderr
+            prefix = f"worker{instance_id}"
+            stdout_thread = threading.Thread(
+                target=self.stream_output,
+                args=(process.stdout, prefix),
+                daemon=True
+            )
+            stderr_thread = threading.Thread(
+                target=self.stream_output,
+                args=(process.stderr, f"{prefix}-ERR"),
+                daemon=True
+            )
+            
+            stdout_thread.start()
+            stderr_thread.start()
+            
+            # Wait for process với timeout
+            try:
+                returncode = process.wait(timeout=300)  # 5 minute timeout
                 
-        except subprocess.TimeoutExpired:
-            print(f"❌ worker{instance_id} timeout (5 minutes)")
+                # Wait for stream threads to finish
+                stdout_thread.join(timeout=2)
+                stderr_thread.join(timeout=2)
+                
+                if returncode == 0:
+                    print(f"✅ worker{instance_id} completed successfully")
+                else:
+                    print(f"❌ worker{instance_id} failed with code: {returncode}")
+                    
+            except subprocess.TimeoutExpired:
+                print(f"❌ worker{instance_id} timeout (5 minutes)")
+                process.kill()
+                process.wait()
+                
         except FileNotFoundError as e:
             print(f"❌ worker{instance_id} command not found: {e}")
             print(f"   💡 Try installing Python or check PATH")

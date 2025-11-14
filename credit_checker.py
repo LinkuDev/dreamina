@@ -13,11 +13,11 @@ def safe_navigate_sync(page: Page, target_url: str, max_attempts: int = None):
             if attempt:
                 print(f"   🔄 Retry attempt {attempt + 1}/{max_attempts}")
                 # First hop to root, then back to target
-                page.goto(DREAMINA_ROOT_URL, wait_until="networkidle", timeout=60000)
+                page.goto(DREAMINA_ROOT_URL, wait_until="domcontentloaded", timeout=60000)
                 time.sleep(3)
             
-            # Use networkidle for better page load detection
-            page.goto(target_url, wait_until="networkidle", timeout=60000)
+            # Use domcontentloaded for better page load detection
+            page.goto(target_url, wait_until="domcontentloaded", timeout=60000)
             
             # Extended wait for page to stabilize
             time.sleep(3)

@@ -133,7 +133,7 @@ def main():
                 try:
                     # Navigate to generation page
                     print(f"\n   🌐 Navigating to generation page...")
-                    page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
+                    page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=60000)
                     
                     # Extended wait for page to load completely
                     print(f"   ⏳ Waiting for generation page to fully load...")

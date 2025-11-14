@@ -72,7 +72,7 @@ def test_single_account(account: dict, browser):
     try:
         # Navigate to home page với extended timeout
         print("   🌐 Navigating to home page...")
-        page.goto("https://dreamina.capcut.com/ai-tool/home", wait_until="networkidle", timeout=45000)
+        page.goto("https://dreamina.capcut.com/ai-tool/home", wait_until="domcontentloaded", timeout=45000)
         
         # Wait for page to fully load - longer delay
         print("   ⏳ Waiting for page to fully load...")
@@ -190,7 +190,7 @@ def test_single_account(account: dict, browser):
         # If not found on home, try creations page với extended wait
         if credits is None:
             print("   🌐 Credits not found on home, trying creations page...")
-            page.goto("https://dreamina.capcut.com/ai-tool/asset", wait_until="networkidle", timeout=45000)
+            page.goto("https://dreamina.capcut.com/ai-tool/asset", wait_until="domcontentloaded", timeout=45000)
             
             # Extended wait for creations page to load
             print("   ⏳ Waiting for creations page to load...")
@@ -226,7 +226,7 @@ def test_single_account(account: dict, browser):
         
         # Test generation page access với extended wait
         print("   🎨 Testing generation page access...")
-        page.goto("https://dreamina.capcut.com/ai-tool/generate?type=image", wait_until="networkidle", timeout=45000)
+        page.goto("https://dreamina.capcut.com/ai-tool/generate?type=image", wait_until="domcontentloaded", timeout=45000)
         
         # Extended wait for generation page
         print("   ⏳ Waiting for generation page to load...")
