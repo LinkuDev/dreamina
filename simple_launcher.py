@@ -8,6 +8,8 @@ import os
 import subprocess
 import threading
 import time
+import sys
+import shutil
 from pathlib import Path
 
 class SimpleLauncher:
@@ -15,6 +17,44 @@ class SimpleLauncher:
         self.workspace = Path(__file__).parent
         self.env_file = self.workspace / ".env"
         self.instances = []
+        self.python_cmd = self.detect_python_command()
+        
+    def detect_python_command(self):
+        """Detect available Python command"""
+        import platform
+        
+        # For Windows, try these commands in order
+        if platform.system() == "Windows":
+            commands = ['python', 'py', 'python3']
+        else:
+            commands = ['python3', 'python', 'py']
+        
+        for cmd in commands:
+            if shutil.which(cmd):
+                try:
+                    # Test if command works
+                    result = subprocess.run([cmd, '--version'], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0 and 'Python' in result.stdout:
+                        print(f"🐍 Detected Python: {cmd} ({result.stdout.strip()})")
+                        return cmd
+                except Exception as e:
+                    print(f"⚠️  {cmd} test failed: {e}")
+                    continue
+        
+        # Last resort: try sys.executable
+        try:
+            result = subprocess.run([sys.executable, '--version'], 
+                                  capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                print(f"🐍 Using sys.executable: {sys.executable}")
+                return sys.executable
+        except:
+            pass
+        
+        # Ultimate fallback
+        print(f"❌ No working Python found, will try 'python'")
+        return 'python'
         
     def load_config(self):
         """Load config từ .env file duy nhất"""
@@ -184,21 +224,36 @@ STARTUP_DELAY=5
         print(f"   💾 Output: {env['OUTPUT_DIR']}")
         
         try:
+            # Debug: Show exact command being run
+            cmd_str = f"{self.python_cmd} main.py"
+            print(f"   🔧 Command: {cmd_str}")
+            print(f"   📁 Working dir: {self.workspace}")
+            
             # Chạy main.py với environment variables
             result = subprocess.run(
-                ['python3', 'main.py'],
+                [self.python_cmd, 'main.py'],
                 cwd=self.workspace,
                 env=env,
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=300  # 5 minute timeout
             )
             
             if result.returncode == 0:
                 print(f"✅ worker{instance_id} completed successfully")
+                if result.stdout:
+                    print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
             else:
                 print(f"❌ worker{instance_id} failed with code: {result.returncode}")
-                print(f"Error: {result.stderr}")
+                print(f"📝 worker{instance_id} stderr:\n{result.stderr}")
+                if result.stdout:
+                    print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
                 
+        except subprocess.TimeoutExpired:
+            print(f"❌ worker{instance_id} timeout (5 minutes)")
+        except FileNotFoundError as e:
+            print(f"❌ worker{instance_id} command not found: {e}")
+            print(f"   💡 Try installing Python or check PATH")
         except Exception as e:
             print(f"❌ worker{instance_id} error: {e}")
     
