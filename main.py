@@ -133,8 +133,11 @@ def main():
                 try:
                     # Navigate to generation page
                     print(f"\n   🌐 Navigating to generation page...")
-                    page.goto(TARGET_URL, wait_until="domcontentloaded", timeout=45000)
-                    time.sleep(2)
+                    page.goto(TARGET_URL, wait_until="networkidle", timeout=60000)
+                    
+                    # Extended wait for page to load completely
+                    print(f"   ⏳ Waiting for generation page to fully load...")
+                    time.sleep(4)
                     
                     # Apply zoom after page loads for better image quality
                     try:
@@ -143,7 +146,7 @@ def main():
                             document.body.style.zoom = '{BROWSER_ZOOM_LEVEL}';
                             document.documentElement.style.zoom = '{BROWSER_ZOOM_LEVEL}';
                         """)
-                        time.sleep(1)
+                        time.sleep(2)  # Extended wait after zoom
                     except Exception as e:
                         print(f"   ⚠️  Could not apply zoom: {e}")
                     
@@ -151,10 +154,15 @@ def main():
                     try:
                         modal = page.locator('div[class*="lv-modal-wrapper"]')
                         modal.wait_for(state="visible", timeout=3000)
+                        print("   📱 Modal detected, closing...")
                         page.keyboard.press("Escape")
-                        time.sleep(1)
+                        time.sleep(2)  # Extended wait after modal close
                     except:
                         pass
+                    
+                    # Additional wait for UI to stabilize
+                    print("   ⏳ Waiting for UI to stabilize...")
+                    time.sleep(3)
                     
                     # Process prompts for this account (one by one with credit check)
                     processed_count = 0
@@ -177,7 +185,7 @@ def main():
                         # Check credit after generation (before processing next prompt)
                         if i < prompts_to_process:
                             print(f"\n   💰 Checking remaining credits...")
-                            time.sleep(2)  # Wait for credit update
+                            time.sleep(3)  # Extended wait for credit update
                             
                             # Check credit by navigating to user profile
                             try:

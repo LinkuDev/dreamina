@@ -13,10 +13,14 @@ def safe_navigate_sync(page: Page, target_url: str, max_attempts: int = None):
             if attempt:
                 print(f"   🔄 Retry attempt {attempt + 1}/{max_attempts}")
                 # First hop to root, then back to target
-                page.goto(DREAMINA_ROOT_URL, wait_until="domcontentloaded", timeout=60000)
-                time.sleep(2)
+                page.goto(DREAMINA_ROOT_URL, wait_until="networkidle", timeout=60000)
+                time.sleep(3)
             
-            page.goto(target_url, wait_until="domcontentloaded", timeout=45000)
+            # Use networkidle for better page load detection
+            page.goto(target_url, wait_until="networkidle", timeout=60000)
+            
+            # Extended wait for page to stabilize
+            time.sleep(3)
             
             # Check for gateway timeout in content
             if "gateway timeout" in page.content().lower():
@@ -29,7 +33,7 @@ def safe_navigate_sync(page: Page, target_url: str, max_attempts: int = None):
             if attempt == max_attempts - 1:
                 print(f"   ❌ All navigation attempts exhausted")
                 raise
-            time.sleep(2)
+            time.sleep(3)
 
 def handle_modal_sync(page: Page):
     """Handle modal pop-ups (sync version)"""
@@ -90,11 +94,15 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
         print(f"   🌐 Navigating to home page...")
         safe_navigate_sync(page, DREAMINA_HOME_URL)
         
-        # Wait a bit for page to settle
-        time.sleep(1)
+        # Extended wait for page to settle and UI to load
+        print(f"   ⏳ Waiting for page UI to fully load...")
+        time.sleep(3)
         
         # Check and close any modal
         handle_modal_sync(page)
+        
+        # Additional wait after modal handling
+        time.sleep(2)
         
         # First, check if there's a Sign in / Login button (means not authenticated)
         print(f"   🔍 Verifying authentication...")
@@ -113,7 +121,10 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
         
         for selector in login_button_selectors:
             try:
+                print(f"   🔍 Checking for login indicator: {selector}")
                 element = page.locator(selector)
+                # Wait for potential login buttons to appear
+                page.wait_for_timeout(1500)
                 if element.count() > 0:
                     print(f"   ❌ Not authenticated - found login button: {selector}")
                     return None
@@ -129,7 +140,10 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
         auth_found = False
         for selector in auth_indicators:
             try:
+                print(f"   🔍 Looking for auth indicator: {selector}")
                 element = page.locator(selector)
+                # Wait for authentication elements to load
+                page.wait_for_timeout(2000)
                 if element.count() > 0:
                     print(f"   ✅ Authenticated (found: {selector})")
                     auth_found = True
@@ -153,8 +167,10 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
         credits = None
         for selector in credit_selectors:
             try:
+                print(f"   🔍 Checking credit selector: {selector}")
                 credit_element = page.locator(selector).first
-                credit_element.wait_for(state="visible", timeout=5000)
+                # Extended wait for credit elements
+                credit_element.wait_for(state="visible", timeout=8000)
                 
                 # Try to extract number from text
                 text = credit_element.inner_text()
@@ -168,20 +184,29 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
                     print(f"   ✅ Credits: {credits}")
                     break
             except Exception as e:
+                print(f"   ⏳ Selector {selector} not found, trying next...")
                 continue
         
         # If not found on home, try creations page
         if credits is None:
             print(f"   🌐 Navigating to creations page...")
             safe_navigate_sync(page, DREAMINA_CREATIONS_URL)
-            time.sleep(1)
+            
+            # Extended wait for creations page
+            print(f"   ⏳ Waiting for creations page to load...")
+            time.sleep(3)
             
             # Check and close any modal again
             handle_modal_sync(page)
             
+            # Additional wait after modal
+            time.sleep(2)
+            
             for selector in credit_selectors:
                 try:
+                    print(f"   🔍 Checking credit on creations: {selector}")
                     credit_element = page.locator(selector).first
+                    # Extended wait for credit elements on creations page
                     credit_element.wait_for(state="visible", timeout=10000)
                     
                     text = credit_element.inner_text()
@@ -194,6 +219,7 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
                         print(f"   ✅ Credits: {credits}")
                         break
                 except Exception as e:
+                    print(f"   ⏳ Selector {selector} not found on creations...")
                     continue
         
         if credits is None:
