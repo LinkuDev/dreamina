@@ -5,6 +5,18 @@ Simple Multi-Instance Launcher for Dreamina
 Chỉ cần 1 file .env để config tất cả
 """
 
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Simple Multi-Instance Launcher for Dreamina
+Chỉ cần 1 file .env để config tất cả
+"""
+
+# IMPORT ENCODING FIX TRƯỚC TIÊN - TRIỆT ĐỂ FIX  
+from encoding_fix import safe_print
+import builtins
+builtins.print = safe_print  # Override print globally
+
 import os
 import subprocess
 import threading
@@ -12,55 +24,6 @@ import time
 import sys
 import shutil
 from pathlib import Path
-
-# Fix Windows console encoding
-if sys.platform.startswith('win'):
-    try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
-        if hasattr(sys.stderr, 'reconfigure'):  
-            sys.stderr.reconfigure(encoding='utf-8')
-        os.system('chcp 65001 >nul 2>&1')
-    except:
-        pass
-
-# Safe print function
-def safe_print(*args, **kwargs):
-    try:
-        _original_print(*args, **kwargs)  # Use original print, not overridden one
-    except UnicodeEncodeError:
-        safe_args = []
-        for arg in args:
-            if isinstance(arg, str):
-                safe_arg = (arg.replace('🚀', '[START]')
-                              .replace('✅', '[OK]')
-                              .replace('❌', '[ERROR]')
-                              .replace('⚠️', '[WARNING]')
-                              .replace('📝', '[NOTE]')
-                              .replace('🔍', '[SEARCH]')
-                              .replace('💰', '[CREDITS]')
-                              .replace('🎨', '[GENERATE]')
-                              .replace('📐', '[RATIO]')
-                              .replace('🖼️', '[IMAGE]')
-                              .replace('📁', '[FOLDER]')
-                              .replace('⏳', '[WAIT]')
-                              .replace('🌐', '[WEB]')
-                              .replace('🔥', '[FIRE]')
-                              .replace('🎯', '[TARGET]')
-                              .replace('🤔', '[THINK]')
-                              .replace('🎉', '[PARTY]')
-                              .replace('🔧', '[TOOL]')
-                              .replace('🐍', '[PYTHON]'))
-                safe_args.append(safe_arg)
-            else:
-                safe_args.append(arg)
-        _original_print(*safe_args, **kwargs)  # Use original print
-
-# Store original print BEFORE defining safe_print
-import builtins
-_original_print = builtins.print
-# Override print for this script
-print = safe_print
 
 class SimpleLauncher:
     def __init__(self):
@@ -267,6 +230,13 @@ STARTUP_DELAY=5
             'BROWSER_HEADLESS': config.get('BROWSER_HEADLESS', 'false')
         })
         
+        # Add UTF-8 encoding for Windows
+        if sys.platform.startswith('win'):
+            env.update({
+                'PYTHONIOENCODING': 'utf-8',
+                'PYTHONLEGACYWINDOWSSTDIO': '1'
+            })
+        
         print(f"🚀 Starting worker{instance_id}...")
         print(f"   📁 Cookies: {env['COOKIES_FOLDER']}")
         print(f"   📝 Prompts: {env['PROMPT_FILE']}")
@@ -279,6 +249,9 @@ STARTUP_DELAY=5
             print(f"   🔧 Command: {cmd_str}")
             print(f"   📁 Working dir: {self.workspace}")
             
+            # Set proper encoding for subprocess
+            encoding = 'utf-8' if sys.platform.startswith('win') else None
+            
             # Chạy main.py với environment variables
             result = subprocess.run(
                 [self.python_cmd, 'main.py'],
@@ -286,17 +259,20 @@ STARTUP_DELAY=5
                 env=env,
                 capture_output=True,
                 text=True,
+                encoding=encoding,
+                errors='replace',  # Replace problematic chars instead of crashing
                 timeout=300  # 5 minute timeout
             )
             
             if result.returncode == 0:
                 print(f"✅ worker{instance_id} completed successfully")
-                if result.stdout:
+                if result.stdout and result.stdout.strip():
                     print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
             else:
                 print(f"❌ worker{instance_id} failed with code: {result.returncode}")
-                print(f"📝 worker{instance_id} stderr:\n{result.stderr}")
-                if result.stdout:
+                if result.stderr and result.stderr.strip():
+                    print(f"📝 worker{instance_id} stderr:\n{result.stderr}")
+                if result.stdout and result.stdout.strip():
                     print(f"📝 worker{instance_id} stdout:\n{result.stdout}")
                 
         except subprocess.TimeoutExpired:
@@ -304,6 +280,9 @@ STARTUP_DELAY=5
         except FileNotFoundError as e:
             print(f"❌ worker{instance_id} command not found: {e}")
             print(f"   💡 Try installing Python or check PATH")
+        except UnicodeDecodeError as e:
+            print(f"❌ worker{instance_id} encoding error: {e}")
+            print(f"   💡 Output contains non-UTF8 characters")
         except Exception as e:
             print(f"❌ worker{instance_id} error: {e}")
     

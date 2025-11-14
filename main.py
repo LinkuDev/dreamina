@@ -16,54 +16,21 @@ Dreamina Multi-Account Image Generator (UI-based)
 - Automatically switches accounts when credits run out
 """
 
-import os
-import sys
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+Dreamina Multi-Account Image Generator (UI-based)
+- Loads prompts from file
+- Generates images via UI interaction with Playwright
+- Automatically switches accounts when credits run out
+"""
 
-# Fix Windows console encoding
-if sys.platform.startswith('win'):
-    try:
-        # Try to set UTF-8 encoding
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding='utf-8')
-        if hasattr(sys.stderr, 'reconfigure'):  
-            sys.stderr.reconfigure(encoding='utf-8')
-        os.system('chcp 65001 >nul 2>&1')  # Set Windows console to UTF-8
-    except:
-        pass
-
-# Safe print function for Windows
-def safe_print(*args, **kwargs):
-    try:
-        _original_print(*args, **kwargs)  # Use original print
-    except UnicodeEncodeError:
-        # Fallback: replace emojis with text equivalents
-        safe_args = []
-        for arg in args:
-            if isinstance(arg, str):
-                # Replace common emojis with text equivalents
-                safe_arg = (arg.replace('🚀', '[START]')
-                              .replace('✅', '[OK]')
-                              .replace('❌', '[ERROR]')
-                              .replace('⚠️', '[WARNING]')
-                              .replace('📝', '[NOTE]')
-                              .replace('🔍', '[SEARCH]')
-                              .replace('💰', '[CREDITS]')
-                              .replace('🎨', '[GENERATE]')
-                              .replace('📐', '[RATIO]')
-                              .replace('🖼️', '[IMAGE]')
-                              .replace('📁', '[FOLDER]')
-                              .replace('⏳', '[WAIT]')
-                              .replace('🌐', '[WEB]'))
-                safe_args.append(safe_arg)
-            else:
-                safe_args.append(arg)
-        _original_print(*safe_args, **kwargs)
-
-# Store original print
+# IMPORT ENCODING FIX TRƯỚC TIÊN - TRIỆT ĐỂ FIX
+from encoding_fix import safe_print
 import builtins
-_original_print = builtins.print
-# Override print for this script
-print = safe_print
+builtins.print = safe_print  # Override print globally
+
+import os
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from dotenv import load_dotenv
