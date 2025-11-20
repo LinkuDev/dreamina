@@ -39,11 +39,34 @@ def handle_modal_sync(page: Page):
     """Handle modal pop-ups (sync version)"""
     try:
         modal_locator = page.locator('div[class*="lv-modal-wrapper"]')
-        modal_locator.wait_for(state="visible", timeout=5000)
+        modal_locator.first.wait_for(state="visible", timeout=5000)
         print("   📱 Modal detected, closing...")
-        page.keyboard.press("Escape")
-        expect(modal_locator).to_be_hidden(timeout=5000)
-        print("   ✅ Modal closed")
+        
+        # Handle multiple modals by closing them one by one
+        modal_count = modal_locator.count()
+        print(f"   📱 Found {modal_count} modal(s)")
+        
+        for i in range(modal_count):
+            try:
+                # Press Escape to close modals
+                page.keyboard.press("Escape")
+                time.sleep(0.5)  # Small delay between key presses
+            except Exception as e:
+                print(f"   ⚠️  Error closing modal {i+1}: {e}")
+        
+        # Wait for all modals to disappear
+        try:
+            # Wait for the modals to be hidden with a reasonable timeout
+            page.wait_for_function(
+                "() => document.querySelectorAll('div[class*=\"lv-modal-wrapper\"]').length === 0 || "
+                "Array.from(document.querySelectorAll('div[class*=\"lv-modal-wrapper\"]')).every(el => "
+                "getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden')",
+                timeout=5000
+            )
+            print("   ✅ All modals closed")
+        except PlaywrightTimeoutError:
+            print("   ⚠️  Some modals may still be visible")
+        
         time.sleep(1)
     except PlaywrightTimeoutError:
         # No modal, that's fine
@@ -94,15 +117,12 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
         print(f"   🌐 Navigating to home page...")
         safe_navigate_sync(page, DREAMINA_HOME_URL)
         
-        # Extended wait for page to settle and UI to load
-        print(f"   ⏳ Waiting for page UI to fully load...")
-        time.sleep(3)
+        # Brief wait for page UI to load
+        print(f"   ⏳ Waiting for page UI to load...")
+        time.sleep(1.5)
         
         # Check and close any modal
         handle_modal_sync(page)
-        
-        # Additional wait after modal handling
-        time.sleep(2)
         
         # First, check if there's a Sign in / Login button (means not authenticated)
         print(f"   🔍 Verifying authentication...")
@@ -123,8 +143,6 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
             try:
                 print(f"   🔍 Checking for login indicator: {selector}")
                 element = page.locator(selector)
-                # Wait for potential login buttons to appear
-                page.wait_for_timeout(1500)
                 if element.count() > 0:
                     print(f"   ❌ Not authenticated - found login button: {selector}")
                     return None
@@ -142,8 +160,6 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
             try:
                 print(f"   🔍 Looking for auth indicator: {selector}")
                 element = page.locator(selector)
-                # Wait for authentication elements to load
-                page.wait_for_timeout(2000)
                 if element.count() > 0:
                     print(f"   ✅ Authenticated (found: {selector})")
                     auth_found = True
@@ -192,15 +208,12 @@ def check_account_credits(account: dict, browser: Browser = None, existing_conte
             print(f"   🌐 Navigating to creations page...")
             safe_navigate_sync(page, DREAMINA_CREATIONS_URL)
             
-            # Extended wait for creations page
+            # Brief wait for creations page
             print(f"   ⏳ Waiting for creations page to load...")
-            time.sleep(3)
+            time.sleep(1.5)
             
             # Check and close any modal again
             handle_modal_sync(page)
-            
-            # Additional wait after modal
-            time.sleep(2)
             
             for selector in credit_selectors:
                 try:

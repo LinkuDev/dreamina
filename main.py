@@ -32,7 +32,7 @@ builtins.print = safe_print  # Override print globally
 
 import os
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from dotenv import load_dotenv
 import time
 
@@ -139,6 +139,17 @@ def main():
                     print(f"   ⏳ Waiting for generation page to fully load...")
                     time.sleep(4)
                     
+                    # Ensure we're on the correct generation URL before proceeding
+                    generation_url = "https://dreamina.capcut.com/ai-tool/generate?type=image"
+                    current_url = page.url
+                    if generation_url not in current_url:
+                        print(f"   🔄 Not on generation page, navigating to: {generation_url}")
+                        page.goto(generation_url, wait_until="domcontentloaded", timeout=60000)
+                        time.sleep(3)
+                        print(f"   ✅ Now on generation page")
+                    else:
+                        print(f"   ✅ Already on generation page")
+                    
                     # Apply zoom after page loads for better image quality
                     try:
                         print(f"   🔍 Applying {int(BROWSER_ZOOM_LEVEL * 100)}% zoom for sharper images...")
@@ -153,9 +164,34 @@ def main():
                     # Handle any modal
                     try:
                         modal = page.locator('div[class*="lv-modal-wrapper"]')
-                        modal.wait_for(state="visible", timeout=3000)
+                        modal.first.wait_for(state="visible", timeout=3000)
                         print("   📱 Modal detected, closing...")
-                        page.keyboard.press("Escape")
+                        
+                        # Handle multiple modals by closing them one by one
+                        modal_count = modal.count()
+                        print(f"   📱 Found {modal_count} modal(s)")
+                        
+                        for i in range(modal_count):
+                            try:
+                                # Press Escape to close modals
+                                page.keyboard.press("Escape")
+                                time.sleep(0.5)  # Small delay between key presses
+                            except Exception as e:
+                                print(f"   ⚠️  Error closing modal {i+1}: {e}")
+                        
+                        # Wait for all modals to disappear
+                        try:
+                            # Wait for the modals to be hidden with a reasonable timeout
+                            page.wait_for_function(
+                                "() => document.querySelectorAll('div[class*=\"lv-modal-wrapper\"]').length === 0 || "
+                                "Array.from(document.querySelectorAll('div[class*=\"lv-modal-wrapper\"]')).every(el => "
+                                "getComputedStyle(el).display === 'none' || getComputedStyle(el).visibility === 'hidden')",
+                                timeout=5000
+                            )
+                            print("   ✅ All modals closed")
+                        except PlaywrightTimeoutError:
+                            print("   ⚠️  Some modals may still be visible")
+                        
                         time.sleep(2)  # Extended wait after modal close
                     except:
                         pass
@@ -164,12 +200,81 @@ def main():
                     print("   ⏳ Waiting for UI to stabilize...")
                     time.sleep(3)
                     
+                    # Verify we're on the generation page and UI is ready
+                    print("   🔍 Verifying page state...")
+                    try:
+                        # Wait for key UI elements to be present
+                        page.wait_for_function(
+                            "() => document.readyState === 'complete'",
+                            timeout=10000
+                        )
+                        
+                        # Check if we can find any generation-related elements
+                        ui_indicators = [
+                            'textarea[placeholder*="prompt"]',
+                            'textarea[placeholder*="描述"]',
+                            'button[class*="button"]',
+                            'div[class*="ratio"]'
+                        ]
+                        
+                        found_ui = False
+                        for selector in ui_indicators:
+                            try:
+                                if page.locator(selector).count() > 0:
+                                    print(f"   ✅ Found UI element: {selector}")
+                                    found_ui = True
+                                    break
+                            except:
+                                continue
+                        
+                        if not found_ui:
+                            print("   ⚠️  No UI elements found, but continuing anyway...")
+                        else:
+                            print("   ✅ Page UI is ready for interaction")
+                        
+                    except Exception as e:
+                        print(f"   ⚠️  UI verification failed: {e}, but continuing...")
+                    
                     # Process prompts for this account (one by one with credit check)
                     processed_count = 0
                     
                     for i, prompt in enumerate(remaining_prompts[:prompts_to_process], 1):
                         print(f"\n   {'─' * 60}")
                         print(f"   🎨 Prompt {i}/{prompts_to_process} (#{global_prompt_counter})")
+                        
+                        # Ensure we're on the correct generation URL before each generation
+                        generation_url = "https://dreamina.capcut.com/ai-tool/generate?type=image"
+                        current_url = page.url
+                        if generation_url not in current_url:
+                            print(f"   🔄 Redirected away, navigating back to: {generation_url}")
+                            page.goto(generation_url, wait_until="domcontentloaded", timeout=60000)
+                            time.sleep(5)  # Longer wait for page to load completely
+                            
+                            # Handle modals again after navigation
+                            try:
+                                modal = page.locator('div[class*="lv-modal-wrapper"]')
+                                modal.first.wait_for(state="visible", timeout=3000)
+                                print("   📱 Modal detected after navigation, closing...")
+                                modal_count = modal.count()
+                                for i in range(modal_count):
+                                    page.keyboard.press("Escape")
+                                    time.sleep(0.5)
+                                time.sleep(2)
+                            except:
+                                pass
+                            
+                            print(f"   ✅ Back on generation page")
+                        
+                        # Additional verification that page is ready
+                        print("   🔍 Verifying page is ready for generation...")
+                        try:
+                            page.wait_for_function(
+                                "() => document.readyState === 'complete'",
+                                timeout=5000
+                            )
+                            time.sleep(1)  # Extra stabilization time
+                        except:
+                            print("   ⚠️  Page readiness check failed, continuing anyway...")
                         
                         # Generate via UI (aspect_ratio is fixed per worker)
                         success = generate_image_via_ui(page, prompt, aspect_ratio)

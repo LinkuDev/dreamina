@@ -36,6 +36,12 @@ def select_aspect_ratio_and_submit(page: Page, desired_ratio: str, prompt: str, 
         max_retries: Maximum number of retry attempts
     """
     
+    # Workaround: If desired_ratio contains comma-separated values, take the first one
+    if ',' in desired_ratio:
+        original_ratio = desired_ratio
+        desired_ratio = desired_ratio.split(',')[0].strip()
+        print(f"   🔧 Workaround: Split '{original_ratio}' -> using first item '{desired_ratio}'")
+    
     for attempt in range(max_retries):
         try:
             if attempt > 0:
@@ -46,64 +52,121 @@ def select_aspect_ratio_and_submit(page: Page, desired_ratio: str, prompt: str, 
             
             print(f"   📐 Processing aspect ratio: {desired_ratio}...")
             
-            # Wait before interacting - slower for stability
-            time.sleep(2)
+            # Close any existing popups/modals before starting
+            print("   🚪 Closing any existing popups/modals...")
+            close_modal(page)
             
-            # Step 1: Click the first button to open aspect ratio selector
-            print("   🖱️  Opening aspect ratio selector...")
-            open_button_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[1]/div/div[2]/div/div[2]/div[1]/button"
-            open_button = page.locator(f'xpath={open_button_xpath}')
-            open_button.wait_for(state="visible", timeout=15000)
-            time.sleep(1)  # Wait before clicking
-            open_button.click()
-            print("   ✅ Opened aspect ratio selector")
-            time.sleep(2)  # Wait for dropdown to fully appear
+            # Set localStorage to prevent app download modal
+            try:
+                print("   🔧 Setting localStorage to prevent app download modal...")
+                page.evaluate("() => { localStorage.setItem('app_download_modal_first_screen_shown', 'true'); }")
+            except Exception as e:
+                print(f"   ⚠️  Failed to set localStorage: {e}")
             
-            # Step 2: Wait for aspect ratio container to appear
-            container_xpath = "/html/body/div[4]/span/div"
-            container = page.locator(f'xpath={container_xpath}')
-            container.wait_for(state="visible", timeout=15000)
-            print("   ✅ Aspect ratio selector appeared")
+            # Step 1: Click directly on "High (2K)" or "Cao (2K)" text to open aspect ratio dropdown
+            print("   🖱️  Looking for 'High (2K)' or 'Cao (2K)' text to click...")
             
-            # Wait for animation to complete - longer delay
-            time.sleep(1.5)
-            
-            # Step 3: Find and click the label with the desired ratio text
-            print(f"   🎯 Selecting ratio: {desired_ratio}...")
-            label_selectors = [
-                f'xpath=//label[contains(@class, "lv-radio")]//span[text()="{desired_ratio}"]',
-                f'xpath=//label[contains(@class, "lv-radio")]//input[@value="{desired_ratio}"]/..',
-                f'xpath=//input[@type="radio" and @value="{desired_ratio}"]',
+            # Simple approach - click directly on the text (support both English and Vietnamese)
+            high_2k_selectors = [
+                ':text("High (2K)")',           # Direct text selector (English)
+                ':text("Cao (2K)")',            # Direct text selector (Vietnamese)
+                'text=High (2K)',               # Playwright text selector (English)
+                'text=Cao (2K)',                # Playwright text selector (Vietnamese)
+                ':text-is("High (2K)")',        # Exact text match (English)
+                ':text-is("Cao (2K)")',         # Exact text match (Vietnamese)
+                '*:has-text("High (2K)")',      # Any element containing text (English)
+                '*:has-text("Cao (2K)")',       # Any element containing text (Vietnamese)
+                'button:has-text("High (2K)")', # Button containing text (English)
+                'button:has-text("Cao (2K)")',  # Button containing text (Vietnamese)
+                'span:has-text("High (2K)")',   # Span containing text (English)
+                'span:has-text("Cao (2K)")',    # Span containing text (Vietnamese)
+                'div:has-text("High (2K)")',    # Div containing text (English)
+                'div:has-text("Cao (2K)")',     # Div containing text (Vietnamese)
             ]
             
-            clicked = False
-            for selector in label_selectors:
+            clicked_high_2k = False
+            
+            for selector in high_2k_selectors:
                 try:
-                    element = page.locator(selector)
+                    print(f"   🔍 Trying to click: {selector}")
+                    element = page.locator(selector).first
+                    
+                    # Wait for element to be visible
+                    element.wait_for(state="visible", timeout=5000)
+                    
                     if element.count() > 0:
-                        time.sleep(0.5)  # Wait before clicking
-                        
-                        # Get the label parent if we found the span/input
-                        if 'span[text()' in selector or 'input[@value' in selector:
-                            # Click the parent label
-                            if 'span[text()' in selector:
-                                label = element.locator('xpath=ancestor::label')
-                            else:
-                                label = element.locator('xpath=..')
-                            label.click()
-                        else:
-                            element.click()
-                        
-                        print(f"   ✅ Selected aspect ratio: {desired_ratio}")
-                        clicked = True
-                        time.sleep(2)  # Wait after clicking - longer delay
+                        print(f"   ✅ Found 'High (2K)' or 'Cao (2K)' element, clicking...")
+                        element.click()
+                        print("   ✅ Clicked 'High (2K)' or 'Cao (2K)' to open dropdown")
+                        clicked_high_2k = True
+                        time.sleep(1)  # Wait for dropdown animation
                         break
+                        
                 except Exception as e:
-                    print(f"   ⚠️  Selector {selector[:50]}... failed: {e}")
+                    print(f"   ⏳ Selector failed: {str(e)[:50]}...")
+                    continue
+            
+            if not clicked_high_2k:
+                print("   ❌ Could not find or click 'High (2K)' or 'Cao (2K)' text!")
+                if attempt < max_retries - 1:
+                    continue
+                else:
+                    return False
+            
+            # Step 2: After clicking "High (2K)" or "Cao (2K)", look for aspect ratio options
+            print(f"   🔍 Looking for aspect ratio options in dropdown...")
+            time.sleep(0.8)  # Brief wait for dropdown animation
+            
+            # Step 3: Click directly on the desired ratio text
+            print(f"   🎯 Looking for aspect ratio: {desired_ratio}...")
+            
+            # Simple approach - click directly on the ratio text
+            ratio_text_selectors = [
+                f':text("{desired_ratio}")',           # Direct text selector
+                f'text={desired_ratio}',               # Playwright text selector  
+                f':text-is("{desired_ratio}")',        # Exact text match
+                f'*:has-text("{desired_ratio}")',      # Any element containing ratio text
+                f'label:has-text("{desired_ratio}")',  # Label containing ratio text
+                f'span:has-text("{desired_ratio}")',   # Span containing ratio text
+                f'div:has-text("{desired_ratio}")',    # Div containing ratio text
+                f'button:has-text("{desired_ratio}")', # Button containing ratio text
+            ]
+            
+            clicked_ratio = False
+            
+            for selector in ratio_text_selectors:
+                try:
+                    print(f"   🔍 Trying to click ratio: {selector}")
+                    element = page.locator(selector).first
+                    
+                    # Wait for element to be visible
+                    element.wait_for(state="visible", timeout=3000)
+                    
+                    if element.count() > 0:
+                        print(f"   ✅ Found '{desired_ratio}' text, preparing to click...")
+                        
+                        # Scroll element into view
+                        element.scroll_into_view_if_needed()
+                        
+                        # Hover over element
+                        print(f"   🎯 Hovering and clicking '{desired_ratio}'...")
+                        element.hover()
+                        time.sleep(0.3)  # Brief hover delay
+                        
+                        # Click with left mouse button explicitly
+                        element.click(button="left")
+                        
+                        print(f"   ✅ Clicked aspect ratio: {desired_ratio}")
+                        clicked_ratio = True
+                        time.sleep(1)  # Wait for selection to register
+                        break
+                        
+                except Exception as e:
+                    print(f"   ⏳ Selector failed: {str(e)[:50]}...")
                     continue
             
             # Critical check - MUST select aspect ratio to continue
-            if not clicked:
+            if not clicked_ratio:
                 print(f"   ❌ Could not select aspect ratio! Will retry...")
                 if attempt < max_retries - 1:
                     continue  # Retry from beginning
@@ -113,48 +176,149 @@ def select_aspect_ratio_and_submit(page: Page, desired_ratio: str, prompt: str, 
             
             # Step 4: Input prompt into textarea
             print(f"   ✍️  Entering prompt: {prompt[:60]}...")
-            textarea_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[1]/div/div[2]/div/div[1]/div[2]/div/textarea"
-            textarea = page.locator(f'xpath={textarea_xpath}')
-            textarea.wait_for(state="visible", timeout=15000)
-            time.sleep(1)  # Wait before interacting
-            textarea.click()
-            time.sleep(1)  # Wait after click
-            textarea.fill(prompt)
-            print("   ✅ Entered prompt")
-            time.sleep(2)  # Wait after entering text
+            
+            # Find textarea by multiple simple selectors
+            textarea_selectors = [
+                'textarea[placeholder*="prompt"]',     # Textarea with prompt in placeholder
+                'textarea[placeholder*="Prompt"]',     # Textarea with Prompt in placeholder
+                'textarea[placeholder*="描述"]',        # Chinese placeholder
+                'textarea',                            # Any textarea
+            ]
+            
+            textarea_found = False
+            
+            for selector in textarea_selectors:
+                try:
+                    print(f"   🔍 Looking for textarea with: {selector}")
+                    textarea = page.locator(selector).first
+                    
+                    if textarea.count() > 0:
+                        print(f"   ✅ Found textarea")
+                        textarea.click()
+                        time.sleep(0.5)  # Wait for focus
+                        textarea.fill(prompt)
+                        print("   ✅ Entered prompt")
+                        textarea_found = True
+                        time.sleep(1)  # Wait for text to register
+                        break
+                        
+                except Exception as e:
+                    print(f"   ⏳ Textarea selector failed: {str(e)[:50]}...")
+                    continue
+            
+            if not textarea_found:
+                print("   ❌ Could not find textarea!")
+                if attempt < max_retries - 1:
+                    continue
+                else:
+                    return False
             
             # Step 5: Click the submit button
-            print("   🚀 Clicking submit button...")
-            submit_button_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[1]/div/div[2]/div/div[2]/div[2]/div[2]/button"
-            submit_button = page.locator(f'xpath={submit_button_xpath}')
-            submit_button.wait_for(state="visible", timeout=15000)
-            time.sleep(1)  # Wait before checking
+            print("   🚀 Looking for submit button...")
             
-            # Check if button is enabled
-            is_disabled = submit_button.get_attribute("disabled")
-            if is_disabled:
-                print("   ⚠️  Submit button is disabled, waiting...")
-                time.sleep(3)
-                is_disabled = submit_button.get_attribute("disabled")
-                if is_disabled:
-                    print("   ❌ Submit button still disabled, will retry...")
-                    if attempt < max_retries - 1:
-                        continue
-                    else:
-                        return False
-            
-            # Click submit
-            submit_button.scroll_into_view_if_needed()
-            time.sleep(1)
+            # Try the specific XPath first
+            submit_clicked = False
+            specific_submit_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[1]/div/div[2]/div/div[2]/div[2]/div[2]/button"
             
             try:
-                submit_button.click()
+                print(f"   🔍 Trying specific XPath: {specific_submit_xpath}")
+                submit_button = page.locator(f'xpath={specific_submit_xpath}')
+                
+                if submit_button.count() > 0:
+                    print(f"   ✅ Found submit button via specific XPath")
+                    time.sleep(0.5)  # Brief wait before checking
+                    
+                    # Check if button is enabled
+                    is_disabled = submit_button.get_attribute("disabled")
+                    if is_disabled:
+                        print("   ⚠️  Submit button is disabled, waiting...")
+                        time.sleep(2)  # Wait for button to enable
+                        is_disabled = submit_button.get_attribute("disabled")
+                        if not is_disabled:
+                            print("   ✅ Submit button is now enabled")
+                        else:
+                            print("   ⚠️  Submit button still disabled, will try other selectors...")
+                            raise Exception("Button still disabled")
+                    
+                    # Click submit
+                    print("   🖱️  Clicking submit button...")
+                    submit_button.scroll_into_view_if_needed()
+                    time.sleep(0.5)  # Brief scroll delay
+                    
+                    try:
+                        submit_button.click()
+                    except Exception as e:
+                        print(f"   ⚠️  First click failed, trying force click: {e}")
+                        submit_button.click(force=True)
+                    
+                    print("   ✅ Clicked submit button (XPath)")
+                    submit_clicked = True
+                    
             except Exception as e:
-                print(f"   ⚠️  First click failed, trying force click: {e}")
-                submit_button.click(force=True)
+                print(f"   ⚠️  Specific XPath failed: {str(e)[:50]}...")
             
-            print("   ✅ Clicked submit button")
-            time.sleep(2)
+            # If specific XPath didn't work, try other selectors
+            if not submit_clicked:
+                print("   🔄 Trying alternative submit selectors...")
+                
+                # Find submit button by text or type
+                submit_selectors = [
+                    'button[class*="submit-button"]',
+                    'button:has-text("Generate")',         # Generate button
+                    'button:has-text("Submit")',           # Submit button
+                    'button:has-text("Tạo")',              # Vietnamese Generate
+                    'button[type="submit"]',               # Submit type button
+                    'button:has-text("生成")',              # Chinese Generate
+                    'input[type="submit"]',                # Submit input
+                    'button[class*="submit"]',             # Button with submit in class
+                    'button[class*="generate"]',           # Button with generate in class
+                ]
+                
+                for selector in submit_selectors:
+                    try:
+                        print(f"   🔍 Looking for submit with: {selector}")
+                        submit_button = page.locator(selector).first
+                        submit_button.wait_for(state="visible", timeout=5000)
+                        
+                        if submit_button.count() > 0:
+                            print(f"   ✅ Found submit button")
+                            time.sleep(0.5)  # Brief wait before checking
+                            
+                            # Check if button is enabled
+                            is_disabled = submit_button.get_attribute("disabled")
+                            if is_disabled:
+                                print("   ⚠️  Submit button is disabled, waiting...")
+                                time.sleep(2)  # Wait for enable
+                                is_disabled = submit_button.get_attribute("disabled")
+                                if is_disabled:
+                                    print("   ❌ Submit button still disabled, trying next selector...")
+                                    continue
+                            
+                            # Click submit
+                            print("   🖱️  Clicking submit button...")
+                            submit_button.scroll_into_view_if_needed()
+                            time.sleep(0.5)  # Brief scroll delay
+                            
+                            try:
+                                submit_button.click()
+                            except Exception as e:
+                                print(f"   ⚠️  First click failed, trying force click: {e}")
+                                submit_button.click(force=True)
+                            
+                            print("   ✅ Clicked submit button")
+                            submit_clicked = True
+                            break
+                            
+                    except Exception as e:
+                        print(f"   ⏳ Submit selector failed: {str(e)[:50]}...")
+                        continue
+            
+            if not submit_clicked:
+                print("   ❌ Could not find or click submit button!")
+                if attempt < max_retries - 1:
+                    continue
+                else:
+                    return False
             
             # Success!
             return True
@@ -835,6 +999,7 @@ def convert_to_high_res(url: str, aspect_ratio: str) -> str:
 def close_modal(page: Page) -> bool:
     """
     Close the image detail modal by clicking the X button
+    Also handles additional popups that might appear
     
     Args:
         page: Playwright page
@@ -843,6 +1008,7 @@ def close_modal(page: Page) -> bool:
         True if modal closed successfully
     """
     try:
+        # First, try to close the main image modal
         close_button_xpath = "/html/body/div[1]/div[1]/div/div/div[2]/div[4]/div/div/div[2]/div[1]/div[2]/button[1]"
         close_button = page.locator(f'xpath={close_button_xpath}')
         
@@ -851,19 +1017,145 @@ def close_modal(page: Page) -> bool:
         close_button.click()
         time.sleep(0.5)
         
-        print("   ✅ Closed modal")
-        return True
+        print("   ✅ Closed main modal")
         
     except Exception as e:
-        print(f"   ⚠️  Failed to close modal: {e}")
-        # Try pressing Escape as fallback
-        try:
-            page.keyboard.press("Escape")
-            time.sleep(0.5)
-            print("   ✅ Closed modal with Escape key")
-            return True
-        except:
-            return False
+        print(f"   ⚠️  Failed to close main modal: {e}")
+    
+    # Check for and close additional popup at /html/body/div[5]/div[2]
+    try:
+        additional_popup_xpath = "/html/body/div[5]/div[2]"
+        additional_popup = page.locator(f'xpath={additional_popup_xpath}')
+        
+        # Wait briefly to see if popup exists
+        additional_popup.wait_for(state="visible", timeout=2000)
+        
+        if additional_popup.count() > 0:
+            print("   📱 Found additional popup at div[5], closing...")
+            
+            # Try to find and click exit/close button within the popup
+            exit_button_selectors = [
+                f'xpath={additional_popup_xpath}//button[contains(@class, "close-button")]',  # Button with close-button class
+                f'xpath={additional_popup_xpath}//div[contains(@class, "close-button")]',    # Div with close-button class
+                f'xpath={additional_popup_xpath}//span[contains(@class, "close-button")]',   # Span with close-button class
+                f'xpath={additional_popup_xpath}//button[contains(@class, "close")]',
+                f'xpath={additional_popup_xpath}//button[contains(@class, "exit")]',
+                f'xpath={additional_popup_xpath}//button[contains(text(), "✕")]',
+                f'xpath={additional_popup_xpath}//button[contains(text(), "×")]',
+                f'xpath={additional_popup_xpath}//button[contains(text(), "Close")]',
+                f'xpath={additional_popup_xpath}//button[contains(text(), "Exit")]',
+                f'xpath={additional_popup_xpath}//span[contains(@class, "close")]',
+                f'xpath={additional_popup_xpath}//div[contains(@class, "close")]',
+            ]
+            
+            popup_closed = False
+            
+            for selector in exit_button_selectors:
+                try:
+                    exit_button = page.locator(selector)
+                    if exit_button.count() > 0:
+                        element_type = "close-button class" if "close-button" in selector else "fallback"
+                        print(f"   🖱️  Clicking {element_type} exit button in popup...")
+                        exit_button.first.click()
+                        popup_closed = True
+                        print(f"   ✅ Closed popup with {element_type} button")
+                        time.sleep(0.5)
+                        break
+                except Exception as e:
+                    continue
+            
+            # If no exit button found, try pressing Escape
+            if not popup_closed:
+                print("   ⌨️  No exit button found, pressing Escape...")
+                page.keyboard.press("Escape")
+                popup_closed = True
+                print("   ✅ Closed popup with Escape key")
+                time.sleep(0.5)
+            
+    except Exception as e:
+        # Popup doesn't exist or already closed
+        pass
+
+    # Check for and close popup at /html/body/div[6]/div[2]/div
+    try:
+        popup_div6_xpath = "/html/body/div[6]/div[2]/div"
+        popup_div6 = page.locator(f'xpath={popup_div6_xpath}')
+        
+        # Wait briefly to see if popup exists
+        popup_div6.wait_for(state="visible", timeout=2000)
+        
+        if popup_div6.count() > 0:
+            print("   📱 Found popup at div[6], closing...")
+            
+            # First try to click the specific close button
+            close_button_xpath = "/html/body/div[6]/div[2]/div/div[2]/div[2]/div/div"
+            close_button = page.locator(f'xpath={close_button_xpath}')
+            
+            popup_closed = False
+            
+            try:
+                close_button.wait_for(state="visible", timeout=3000)
+                if close_button.count() > 0:
+                    print(f"   🖱️  Clicking close button in div[6] popup...")
+                    close_button.first.click()
+                    popup_closed = True
+                    print("   ✅ Closed div[6] popup with specific close button")
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"   ⚠️  Specific close button failed: {e}")
+            
+            # If specific button doesn't work, try other selectors
+            if not popup_closed:
+                exit_button_selectors = [
+                    f'xpath={popup_div6_xpath}//button[contains(@class, "close-button")]',  # Button with close-button class
+                    f'xpath={popup_div6_xpath}//div[contains(@class, "close-button")]',    # Div with close-button class
+                    f'xpath={popup_div6_xpath}//span[contains(@class, "close-button")]',   # Span with close-button class
+                    f'xpath={popup_div6_xpath}//button[contains(@class, "close")]',
+                    f'xpath={popup_div6_xpath}//button[contains(@class, "exit")]',
+                    f'xpath={popup_div6_xpath}//button[contains(text(), "✕")]',
+                    f'xpath={popup_div6_xpath}//button[contains(text(), "×")]',
+                    f'xpath={popup_div6_xpath}//button[contains(text(), "Close")]',
+                    f'xpath={popup_div6_xpath}//button[contains(text(), "Exit")]',
+                    f'xpath={popup_div6_xpath}//span[contains(@class, "close")]',
+                    f'xpath={popup_div6_xpath}//div[contains(@class, "close")]',
+                ]
+                
+                for selector in exit_button_selectors:
+                    try:
+                        exit_button = page.locator(selector)
+                        if exit_button.count() > 0:
+                            element_type = "close-button class" if "close-button" in selector else "fallback"
+                            print(f"   🖱️  Clicking {element_type} exit button in div[6] popup...")
+                            exit_button.first.click()
+                            popup_closed = True
+                            print(f"   ✅ Closed div[6] popup with {element_type} button")
+                            time.sleep(0.5)
+                            break
+                    except Exception as e:
+                        continue
+            
+            # Final fallback for div[6] popup - try pressing Escape
+            if not popup_closed:
+                print("   ⌨️  No exit button found for div[6], pressing Escape...")
+                page.keyboard.press("Escape")
+                popup_closed = True
+                print("   ✅ Closed div[6] popup with Escape key")
+                time.sleep(0.5)
+            
+    except Exception as e:
+        # Popup doesn't exist or already closed
+        pass
+    
+    # Final fallback - press Escape to close any remaining modals
+    try:
+        print("   ⌨️  Final Escape key press to ensure all modals are closed...")
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
+        print("   ✅ Final modal cleanup completed")
+        return True
+    except Exception as e:
+        print(f"   ⚠️  Final modal cleanup failed: {e}")
+        return False
 
 def detect_available_resolutions(page: Page) -> list:
     """
